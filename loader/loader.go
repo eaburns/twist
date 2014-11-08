@@ -18,9 +18,11 @@ import (
 // token locations, the AST, types, and an SSA representation.
 type Program struct {
 	FileSet       *token.FileSet
-	File          *ast.File
+	AST           *ast.File
 	LoaderProgram *goloader.Program
 	SSAProgram    *ssa.Program
+	// Node maps each ssa.Value and ssa.Instruction to an ast.Node.
+	Node map[interface{}]ast.Node
 }
 
 // NewProgram loads and returns a program
@@ -53,17 +55,128 @@ func newProgram(path, src string) (*Program, error) {
 
 	var err error
 	cfg := goloader.Config{Fset: p.FileSet, SourceImports: false}
-	if p.File, err = cfg.ParseFile(path, src); err != nil {
+	if p.AST, err = cfg.ParseFile(path, src); err != nil {
 		return nil, err
 	}
-	cfg.CreatePkgs = []goloader.CreatePkg{{Files: []*ast.File{p.File}}}
+	cfg.CreatePkgs = []goloader.CreatePkg{{Files: []*ast.File{p.AST}}}
 	if p.LoaderProgram, err = cfg.Load(); err != nil {
 		return nil, err
 	}
 
 	p.SSAProgram = ssa.Create(p.LoaderProgram, 0)
+	for _, pkg := range p.SSAProgram.AllPackages() {
+		pkg.SetDebugMode(true)
+	}
 	p.SSAProgram.BuildAll()
+
+	buildNodeMap(&p)
 	return &p, nil
+}
+
+func buildNodeMap(prog *Program) {
+	prog.Node = make(map[interface{}]ast.Node)
+	var ss []ast.Stmt
+
+	// Walk populates prog.Node for ssa.Values and ss.
+	ast.Walk(visitor{prog, &ss, prog.AST}, prog.AST)
+
+	for _, f := range prog.functions() {
+		for _, b := range f.Blocks {
+			for i, p := range b.Instrs {
+				// ast.Walk already found nodes for ssa.Values.
+				if _, ok := p.(ssa.Value); ok {
+					continue
+				}
+
+				// For Jumps, use the node of the previous instruction.
+				if _, ok := p.(*ssa.Jump); ok && i > 0 {
+					if n := prog.Node[b.Instrs[i-1]]; n != nil {
+						prog.Node[p] = n
+						continue
+					}
+				}
+
+				// Find the latest-starting, containing statement.
+				pos := p.Pos()
+				if f, ok := p.(*ssa.If); ok {
+					// Ifs don't have a position, use their condition's.
+					pos = f.Cond.Pos()
+				}
+				n := ast.Node(findStmt(ss, pos))
+				if n != nil {
+					prog.Node[p] = n
+					continue
+				}
+			}
+		}
+	}
+}
+
+// FindStmt returns the latest-starting statement
+// containing the given position.
+func findStmt(ss []ast.Stmt, p token.Pos) ast.Stmt {
+	n := -1
+	for i, s := range ss {
+		if s.Pos() > p || s.End() <= p {
+			continue
+		}
+		if n < 0 || s.Pos() > ss[n].Pos() {
+			n = i
+		}
+	}
+	if n < 0 {
+		return nil
+	}
+	return ss[n]
+}
+
+type visitor struct {
+	*Program
+	stmts *[]ast.Stmt
+	node  ast.Node
+}
+
+// Visit implements the ast.Visitor interface.
+// Builds Program.Node by to each ssa.Value
+// the shallowest ast.Expr associated with the value.
+// It also populates stmts with all ast.Nodes
+// that are also ast.Stmts.
+func (v visitor) Visit(node ast.Node) ast.Visitor {
+	if node != nil {
+		return visitor{v.Program, v.stmts, node}
+	}
+
+	node = v.node
+	if expr, ok := node.(ast.Expr); ok {
+		if val := v.valueForExpr(expr); val != nil {
+			v.Program.Node[val] = node
+		}
+	}
+	if s, ok := node.(ast.Stmt); ok {
+		*v.stmts = append(*v.stmts, s)
+	}
+	return nil
+}
+
+func (v visitor) valueForExpr(expr ast.Expr) ssa.Value {
+	for _, f := range v.Program.functions() {
+		if v, _ := f.ValueForExpr(expr); v != nil {
+			return v
+		}
+	}
+	return nil
+}
+
+func (p *Program) functions() []*ssa.Function {
+	var fs []*ssa.Function
+	for _, pkg := range p.SSAProgram.AllPackages() {
+		for _, mem := range pkg.Members {
+			if f, ok := mem.(*ssa.Function); ok {
+				fs = append(fs, f)
+			}
+		}
+	}
+	return fs
 }
 
 // Function retuns the *ssa.Function for a fully-qualified function,
