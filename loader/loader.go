@@ -5,6 +5,7 @@ package loader
 import (
 	"errors"
 	"go/ast"
+	"go/parser"
 	"go/token"
 	"io/ioutil"
 	"os"
@@ -20,6 +21,8 @@ type Program struct {
 	SSAProgram *ssa.Program
 	// Node maps each ssa.Value and ssa.Instruction to an ast.Node.
 	Node map[interface{}]ast.Node
+	// Comments maps ast.Nodes to their associated comments.
+	Comments ast.CommentMap
 }
 
 // NewProgram loads and returns a program
@@ -51,7 +54,11 @@ func newProgram(path, src string) (*Program, error) {
 	file.SetLinesForContent([]byte(src))
 
 	var err error
-	cfg := goloader.Config{Fset: files, SourceImports: false}
+	cfg := goloader.Config{
+		Fset:          files,
+		ParserMode:    parser.ParseComments,
+		SourceImports: false,
+	}
 	root, err := cfg.ParseFile(path, src)
 	if err != nil {
 		return nil, err
@@ -69,6 +76,8 @@ func newProgram(path, src string) (*Program, error) {
 	p.SSAProgram.BuildAll()
 
 	buildNodeMap(&p, root)
+	p.Comments = ast.NewCommentMap(files, root, root.Comments)
+
 	return &p, nil
 }
 
