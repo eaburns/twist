@@ -17,10 +17,7 @@ import (
 // It contains:
 // token locations, the AST, types, and an SSA representation.
 type Program struct {
-	FileSet       *token.FileSet
-	AST           *ast.File
-	LoaderProgram *goloader.Program
-	SSAProgram    *ssa.Program
+	SSAProgram *ssa.Program
 	// Node maps each ssa.Value and ssa.Instruction to an ast.Node.
 	Node map[interface{}]ast.Node
 }
@@ -49,36 +46,38 @@ func NewProgramString(src string) (*Program, error) {
 
 func newProgram(path, src string) (*Program, error) {
 	var p Program
-	p.FileSet = token.NewFileSet()
-	file := p.FileSet.AddFile(path, p.FileSet.Base(), len(src))
+	files := token.NewFileSet()
+	file := files.AddFile(path, files.Base(), len(src))
 	file.SetLinesForContent([]byte(src))
 
 	var err error
-	cfg := goloader.Config{Fset: p.FileSet, SourceImports: false}
-	if p.AST, err = cfg.ParseFile(path, src); err != nil {
+	cfg := goloader.Config{Fset: files, SourceImports: false}
+	root, err := cfg.ParseFile(path, src)
+	if err != nil {
 		return nil, err
 	}
-	cfg.CreatePkgs = []goloader.CreatePkg{{Files: []*ast.File{p.AST}}}
-	if p.LoaderProgram, err = cfg.Load(); err != nil {
+	cfg.CreatePkgs = []goloader.CreatePkg{{Files: []*ast.File{root}}}
+	lprog, err := cfg.Load()
+	if err != nil {
 		return nil, err
 	}
 
-	p.SSAProgram = ssa.Create(p.LoaderProgram, 0)
+	p.SSAProgram = ssa.Create(lprog, 0)
 	for _, pkg := range p.SSAProgram.AllPackages() {
 		pkg.SetDebugMode(true)
 	}
 	p.SSAProgram.BuildAll()
 
-	buildNodeMap(&p)
+	buildNodeMap(&p, root)
 	return &p, nil
 }
 
-func buildNodeMap(prog *Program) {
+func buildNodeMap(prog *Program, root ast.Node) {
 	prog.Node = make(map[interface{}]ast.Node)
 	var ss []ast.Stmt
 
 	// Walk populates prog.Node for ssa.Values and ss.
-	ast.Walk(visitor{prog, &ss, prog.AST}, prog.AST)
+	ast.Walk(visitor{prog, &ss, root}, root)
 
 	for _, f := range prog.functions() {
 		for _, b := range f.Blocks {
@@ -177,6 +176,11 @@ func (p *Program) functions() []*ssa.Function {
 		}
 	}
 	return fs
+}
+
+// Position returns the token.Position for a token.Pos in the loaded program.
+func (p *Program) Position(pos token.Pos) token.Position {
+	return p.SSAProgram.Fset.Position(pos)
 }
 
 // Function retuns the *ssa.Function for a fully-qualified function,
