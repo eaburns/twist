@@ -111,34 +111,35 @@ func TestProgramNode(t *testing.T) {
 	}
 	for _, blk := range f.Blocks {
 		for _, p := range blk.Instrs {
-			if _, ok := p.(*ssa.DebugRef); ok {
+			if _, ok := p.(*ssa.DebugRef); ok { // skip debug comments
 				continue
 			}
 			n, ok := prog.Node[p]
 			if !ok { // no node
 				continue
 			}
-			c, ok := prog.Comments[n]
+			cs, ok := prog.Comments[n]
 			if !ok { // no comment
 				continue
 			}
-			if len(c) != 1 {
+			if len(cs) != 1 {
 				panic("annotations must only contain one comment")
 			}
+			c := cs[0]
 
 			// Found an instruction with a node and a comment.
 			// Get the desired types.
-			wantIt, ok := instrType[c[0]]
+			wantIt, ok := instrType[c]
 			if !ok {
 				t.Errorf("unexpected comment at: %s", prog.Position(n.Pos()))
 				continue
 			}
-			wantNt, ok := nodeType[c[0]]
+			wantNt, ok := nodeType[c]
 			if !ok {
 				panic("instrType and nodeType out of sync")
 			}
-			delete(instrType, c[0])
-			delete(nodeType, c[0])
+			delete(instrType, c)
+			delete(nodeType, c)
 
 			// Check against the types we got.
 			it := reflect.ValueOf(p).Elem().Type().Name()

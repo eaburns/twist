@@ -15,8 +15,6 @@ import (
 )
 
 // A Program represents a loaded program.
-// It contains:
-// token locations, the AST, types, and an SSA representation.
 type Program struct {
 	SSAProgram *ssa.Program
 	// Node maps each ssa.Value and ssa.Instruction to an ast.Node.
@@ -104,12 +102,13 @@ func buildNodeMap(prog *Program, root ast.Node) {
 					}
 				}
 
-				// Find the latest-starting, containing statement.
 				pos := p.Pos()
 				if f, ok := p.(*ssa.If); ok {
 					// Ifs don't have a position, use their condition's.
 					pos = f.Cond.Pos()
 				}
+				// Find the latest-starting, containing statement.
+				// TODO(eaburns): This is quadratic. Can we do better?
 				n := ast.Node(findStmt(ss, pos))
 				if n != nil {
 					prog.Node[p] = n
@@ -145,10 +144,10 @@ type visitor struct {
 }
 
 // Visit implements the ast.Visitor interface.
-// Builds Program.Node by to each ssa.Value
-// the shallowest ast.Expr associated with the value.
-// It also populates stmts with all ast.Nodes
-// that are also ast.Stmts.
+// Visit populates Program.Node for ssa.Values
+// by assigning the shallowest ast.Node
+// to each ssa.Value.
+// It also populates stmts with all ast.Stmt nodes.
 func (v visitor) Visit(node ast.Node) ast.Visitor {
 	if node != nil {
 		return visitor{v.Program, v.stmts, node}
@@ -187,13 +186,13 @@ func (p *Program) functions() []*ssa.Function {
 	return fs
 }
 
-// Position returns the token.Position for a token.Pos in the loaded program.
+// Position returns the token.Position for a token.Pos.
 func (p *Program) Position(pos token.Pos) token.Position {
 	return p.SSAProgram.Fset.Position(pos)
 }
 
-// Function retuns the *ssa.Function for a fully-qualified function,
-// specified by its package name and function name.
+// Function returns the *ssa.Function
+// with the given name in the given package.
 func (p *Program) Function(pname, fname string) (*ssa.Function, error) {
 	pkg, err := p.Package(pname)
 	if err != nil {
@@ -210,7 +209,7 @@ func (p *Program) Function(pname, fname string) (*ssa.Function, error) {
 	return f, nil
 }
 
-// Package retuns the named *ssa.Package,
+// Package returns the named *ssa.Package,
 func (p *Program) Package(pname string) (*ssa.Package, error) {
 	for _, pkg := range p.SSAProgram.AllPackages() {
 		if pkg.Object.Name() == pname {
