@@ -12,7 +12,7 @@ import (
 
 	"go/ast"
 
-	"code.google.com/p/go.tools/go/ssa"
+	"golang.org/x/tools/go/ssa"
 	"github.com/eaburns/twist/loader"
 )
 

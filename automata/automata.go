@@ -7,7 +7,7 @@ import (
 	"bytes"
 	"strconv"
 
-	"code.google.com/p/go.tools/go/ssa"
+	"golang.org/x/tools/go/ssa"
 )
 
 // An Automata is a finite state machine
