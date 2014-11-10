@@ -12,8 +12,8 @@ import (
 
 	"go/ast"
 
-	"golang.org/x/tools/go/ssa"
 	"github.com/eaburns/twist/loader"
+	"golang.org/x/tools/go/ssa"
 )
 
 func main() {
