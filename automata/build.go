@@ -4,7 +4,7 @@ import (
 	"errors"
 	"go/token"
 
-	"code.google.com/p/go.tools/go/ssa"
+	"golang.org/x/tools/go/ssa"
 )
 
 // New returns a new, empty Automata.

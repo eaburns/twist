@@ -10,8 +10,8 @@ import (
 	"io/ioutil"
 	"os"
 
-	goloader "code.google.com/p/go.tools/go/loader"
-	"code.google.com/p/go.tools/go/ssa"
+	goloader "golang.org/x/tools/go/loader"
+	"golang.org/x/tools/go/ssa"
 )
 
 // A Program represents a loaded program.
